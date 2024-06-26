@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 sysinfo = "0.30.12"
+process-memory = "0.5.0"
+patternscan = "1.2.0"
