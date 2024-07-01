@@ -29,28 +29,52 @@ fn main() {
 
     let available_address_spaces = get_available_address_spaces(&entire_proc_file_buffer);
 
-    // println!("pass for {}", address_space);
     for address_space in available_address_spaces {
-        let mut memory_range = address_space.split(" ").next().expect("First should always be there").split("-");
-        let start_address = match usize::from_str_radix(memory_range.next().expect("should also be there"), 16) {
+        let mut memory_range = match address_space.split(" ").next(){
+            Some(v) => v.split("-"),
+            None => {
+                println!("Unable to extract memory_range from address space: {}", address_space);
+                exit(69);
+            }
+        };
+        let start_address = match usize::from_str_radix(
+            match memory_range.next() {
+                Some(v) => v,
+                None => {
+                    println!("No candidates available for start address in {:?}", memory_range);
+                    exit(69);
+                }
+            },
+            16
+        ) {
             Ok(v) => v,
             Err(e) => {
-                println!("error getting start_address, {}", e);
+                println!("error converting string of start_address to usize, {}", e);
                 continue;
             }
         };
-        let end_address = match usize::from_str_radix(memory_range.next().expect("shuld be here if the first one is here"), 16) {
+        let end_address = match usize::from_str_radix(
+            match memory_range.next() {
+                Some(v) => v,
+                None => {
+                    println!("No candidates available for end address in {:?}", memory_range);
+                    exit(69);
+                }
+            },
+            16
+        ) {
             Ok(v) => v,
-            Err(_e) => { /*println!("error getting end_address, {}", _e);*/continue; }
+            Err(e) => {
+                println!("error converting string of end_address to usize, {}", e);
+                continue;
+            }
         };
         let size = end_address - start_address;
-        // println!("{} with size {}",  start_address, size);
 
         let _bytes = match copy_address(start_address, size, &handle) {
             Ok(v) => v,
             Err(_e) => { /*println!("error actually reading memory: {}", _e);*/continue; }
         };
-        // println!("read {} bytes", _bytes.len());
 
         let pattern = "48 8b 0d ? ? ? ? 0f 28 f1 48 85 c9 74 ? 48 89 7c";
         let locs = match scan(Cursor::new(_bytes), &pattern) {
