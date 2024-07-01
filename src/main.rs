@@ -13,7 +13,6 @@ fn main() {
     let handle = get_proc_handle(pid);
 
     let filepath = format!("/proc/{}/maps", pid);
-    // println!("{}", filepath);
 
     let mut f = match File::open(filepath) {
         Ok(v) => v,
@@ -29,11 +28,13 @@ fn main() {
 
     let available_address_spaces = get_available_address_spaces(&entire_proc_file_buffer);
 
-    for address_space in available_address_spaces {
-        let mut memory_range = match address_space.split(" ").next(){
+    let mut base_address: Option<usize> = None;
+
+    for memory_region in available_address_spaces {
+        let mut memory_range = match memory_region.split(" ").next(){
             Some(v) => v.split("-"),
             None => {
-                println!("Unable to extract memory_range from address space: {}", address_space);
+                println!("Unable to extract memory range from memory region: {}", memory_region);
                 exit(69);
             }
         };
@@ -53,6 +54,7 @@ fn main() {
                 continue;
             }
         };
+
         let end_address = match usize::from_str_radix(
             match memory_range.next() {
                 Some(v) => v,
@@ -69,35 +71,41 @@ fn main() {
                 continue;
             }
         };
+        if base_address == None {
+            base_address = Some(end_address);
+        }
         let size = end_address - start_address;
 
-        let _bytes = match copy_address(start_address, size, &handle) {
-            Ok(v) => v,
-            Err(_e) => { /*println!("error actually reading memory: {}", _e);*/continue; }
-        };
-
-        let pattern = "48 8b 0d ? ? ? ? 0f 28 f1 48 85 c9 74 ? 48 89 7c";
-        let locs = match scan(Cursor::new(_bytes), &pattern) {
+        let entire_memory_region: Vec<u8> = match copy_address(start_address, size, &handle) {
             Ok(v) => v,
             Err(e) => {
-                println!("error getting locations: {}", e);
+                println!("Error reading memory region {:?} : {}", memory_range, e);
+                continue;
+            }
+        };
+
+        let player_pos_pattern = "48 8b 0d ? ? ? ? 0f 28 f1 48 85 c9 74 ? 48 89 7c";
+        let locs = match scan(Cursor::new(entire_memory_region), &player_pos_pattern) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Error scanning for pattern for player_pos_location: {}", e);
                 continue
             }
         };
 
-        if locs.len() > 0 {
-            println!("found occurence in {} at offset {:?}", address_space, locs[0]);
-        } else {
+        if locs.len() == 0 {
             continue;
         }
 
-        let ad = locs[0] + 5368713216 + 3;
+        let initial_search = locs[0];
+        // 5368713216
+        let ad = initial_search + base_address.expect("") + 3; // 3 is address_offset from player_pos
         let _bytes = match copy_address(ad, 4, &handle) {
             Ok(v) => v,
             Err(_e) => { exit(69); }
         };
         let addr_at_ini = i32::from_le_bytes(_bytes.try_into().expect(""));
-        let target = 5368713216 + locs[0] + addr_at_ini as usize + 7;
+        let target = base_address.expect("") + locs[0] + addr_at_ini as usize + 7;
 
         let offset = vec![0, 0x68, 0x68, 0x28, 0x10];
 
@@ -114,27 +122,9 @@ fn main() {
 
 
          println!("player x: {}", x);
-
-        // filepath = format!("/proc/{}/maps", memory_range);
-        // let mut buffer = Vec::new();
-
-        // read the whole file
-        // f.read_to_end(&mut buffer).expect("Should be there");
-
-
-        // println!("{:?}", buffer);
     }
 }
 
-/*pub fn read_float(address: usize, handle: ProcessHandle) -> f32 {
-    let read_float = process.read_mem::<f32>(
-        self.resolve_offsets(
-            offsets_copy,
-            &process,
-        )).unwrap();
-    return read_float;
-}
-*/
 pub fn resolve_offsets_to_final_address(start:usize, offsets: Vec<usize>, process: ProcessHandle) -> usize {
     let mut ptr = start.clone();
     for (index, offset) in offsets.iter().enumerate() {
