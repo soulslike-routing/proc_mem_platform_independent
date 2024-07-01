@@ -13,28 +13,24 @@ fn main() {
     let handle = get_proc_handle(pid);
 
     let filepath = format!("/proc/{}/maps", pid);
-    println!("{}", filepath);
+    // println!("{}", filepath);
 
-    let mut f = File::open(filepath).expect("e");
+    let mut f = match File::open(filepath) {
+        Ok(v) => v,
+        Err(e) => {println!("error opening file at /proc/{}/maps: {}", pid, e);exit(69);}
+    };
     
-    let mut buffer = String::new();
+    let mut entire_proc_file_buffer = String::new();
 
-    f.read_to_string(&mut buffer).expect("should work");
-    // println!("{}", buffer);
-    let mut keep_going = false;
+    match f.read_to_string(&mut entire_proc_file_buffer) {
+        Ok(bytes_read_count) => bytes_read_count,
+        Err(e) => {println!("error reading file: {}", e);exit(69);}
+    };
 
-    let mut valid_proc = Vec::new();
-    for address_space in buffer.split("\n") {
-        // println!("{}", address_space);
-        if !address_space.contains("DarkSoulsRemastered.exe") && !(keep_going && (!address_space.contains("/") && !address_space.contains("["))) {
-            keep_going = false;
-            continue;
-        }
-        valid_proc.push(address_space);
-        keep_going = true;
-    }
+    let available_address_spaces = get_available_address_spaces(&entire_proc_file_buffer);
+
     // println!("pass for {}", address_space);
-    for address_space in valid_proc {
+    for address_space in available_address_spaces {
         let mut memory_range = address_space.split(" ").next().expect("First should always be there").split("-");
         let start_address = match usize::from_str_radix(memory_range.next().expect("should also be there"), 16) {
             Ok(v) => v,
@@ -45,14 +41,14 @@ fn main() {
         };
         let end_address = match usize::from_str_radix(memory_range.next().expect("shuld be here if the first one is here"), 16) {
             Ok(v) => v,
-            Err(e) => { /*println!("error getting end_address, {}", e);*/continue; }
+            Err(_e) => { /*println!("error getting end_address, {}", _e);*/continue; }
         };
         let size = end_address - start_address;
         // println!("{} with size {}",  start_address, size);
 
         let _bytes = match copy_address(start_address, size, &handle) {
             Ok(v) => v,
-            Err(e) => { /*println!("error actually reading memory: {}", e);*/continue; }
+            Err(_e) => { /*println!("error actually reading memory: {}", _e);*/continue; }
         };
         // println!("read {} bytes", _bytes.len());
 
@@ -74,7 +70,7 @@ fn main() {
         let ad = locs[0] + 5368713216 + 3;
         let _bytes = match copy_address(ad, 4, &handle) {
             Ok(v) => v,
-            Err(e) => { exit(69); }
+            Err(_e) => { exit(69); }
         };
         let addr_at_ini = i32::from_le_bytes(_bytes.try_into().expect(""));
         let target = 5368713216 + locs[0] + addr_at_ini as usize + 7;
@@ -86,14 +82,14 @@ fn main() {
 
         let abc = match copy_address( final_address, 4, &handle) {
             Ok(v) => v,
-            Err(e) => {exit(69);}
+            Err(_e) => {exit(69);}
         };
         let x = f32::from_le_bytes(abc.try_into().expect(""));//process.read_mem::<usize>(address).unwrap();
 
 
 
 
-         println!("trying to read the offset");
+         println!("player x: {}", x);
 
         // filepath = format!("/proc/{}/maps", memory_range);
         // let mut buffer = Vec::new();
@@ -149,4 +145,20 @@ fn get_pid() -> i32 {
 
 fn get_proc_handle(pid: i32) -> ProcessHandle {
     return pid.try_into_process_handle().unwrap();
+}
+
+fn get_available_address_spaces(all_spaces: &String) -> Vec<&str>{
+    let mut keep_going = false;
+
+    let mut valid_adr_spc = Vec::new();
+    for address_space in all_spaces.split("\n") {
+        // println!("{}", address_space);
+        if !address_space.contains("DarkSoulsRemastered.exe") && !(keep_going && (!address_space.contains("/") && !address_space.contains("["))) {
+            keep_going = false;
+            continue;
+        }
+        valid_adr_spc.push(address_space);
+        keep_going = true;
+    }
+    return valid_adr_spc;
 }
