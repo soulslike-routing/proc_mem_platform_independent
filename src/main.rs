@@ -1,5 +1,5 @@
 use process_memory::ProcessHandle;
-use sysinfo::{System};
+use sysinfo::System;
 use process_memory::{copy_address, TryIntoProcessHandle};
 use std::fs::File;
 use std::io::Read;
@@ -9,16 +9,10 @@ use patternscan::scan;
 use std::io::Cursor;
 
 fn main() {
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    let pid = get_pid();
+    let handle = get_proc_handle(pid);
 
-    let ds_proc = sys.processes_by_name("DarkSouls").into_iter().filter(|proc| proc.thread_kind() == None).next()
-        .expect("Is the game running?");
-    println!("{} {}, {:?}", ds_proc.pid(), ds_proc.name(), ds_proc.memory());
-
-    let handle = (ds_proc.pid().as_u32() as i32).try_into_process_handle().unwrap();
-
-    let mut filepath = format!("/proc/{}/maps", ds_proc.pid().as_u32() as i32);
+    let filepath = format!("/proc/{}/maps", pid);
     println!("{}", filepath);
 
     let mut f = File::open(filepath).expect("e");
@@ -139,4 +133,20 @@ pub fn resolve_offsets_to_final_address(start:usize, offsets: Vec<usize>, proces
         }
     }
     return ptr;
+}
+
+// --
+
+fn get_pid() -> i32 {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let ds_proc = sys.processes_by_name("DarkSouls").into_iter().filter(|proc| proc.thread_kind() == None).next()
+        .expect("Is the game running?");
+    // println!("{} {}, {:?}", ds_proc.pid(), ds_proc.name(), ds_proc.memory());
+    return ds_proc.pid().as_u32() as i32;
+}
+
+fn get_proc_handle(pid: i32) -> ProcessHandle {
+    return pid.try_into_process_handle().unwrap();
 }
